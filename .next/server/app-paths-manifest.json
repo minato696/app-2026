@@ -1,0 +1,10 @@
+{
+  "/api/stations/route": "app/api/stations/route.js",
+  "/api/current-program/route": "app/api/current-program/route.js",
+  "/api/image-resizer/route": "app/api/image-resizer/route.js",
+  "/favicon.ico/route": "app/favicon.ico/route.js",
+  "/api/programs/route": "app/api/programs/route.js",
+  "/[stationId]/page": "app/[stationId]/page.js",
+  "/page": "app/page.js",
+  "/_not-found/page": "app/_not-found/page.js"
+}
