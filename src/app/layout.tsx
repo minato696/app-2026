@@ -28,23 +28,28 @@ export const metadata: Metadata = {
     address: false,
     telephone: false,
   },
-  // Establecer metadataBase para imágenes de Open Graph y Twitter
-  metadataBase: new URL('http://192.168.10.230:9544'),
   icons: {
-    // Definir todos los favicons necesarios
+    // Usar el favicon de Exitosa Noticias
     icon: [
-      { url: '/favicon.ico' },
-      { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
-      { url: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
+      {
+        url: 'https://statics.exitosanoticias.pe/exitosa/img/global/favicon.png',
+        type: 'image/png'
+      }
     ],
     // Para dispositivos Apple
     apple: [
-      { url: '/apple-touch-icon.png', sizes: '180x180' }
+      {
+        url: 'https://statics.exitosanoticias.pe/exitosa/img/global/favicon.png',
+        sizes: '180x180'
+      }
     ],
     // Para Android
     other: [
-      { url: '/android-chrome-192x192.png', sizes: '192x192', type: 'image/png' },
-      { url: '/android-chrome-512x512.png', sizes: '512x512', type: 'image/png' },
+      {
+        url: 'https://statics.exitosanoticias.pe/exitosa/img/global/favicon.png',
+        sizes: '192x192',
+        type: 'image/png'
+      }
     ]
   },
   // Open Graph para compartir en redes sociales
@@ -88,6 +93,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es">
+      <head>
+        {/* Favicon adicional como link tag para mayor compatibilidad */}
+        <link rel="icon" href="https://statics.exitosanoticias.pe/exitosa/img/global/favicon.png" />
+        <link rel="shortcut icon" href="https://statics.exitosanoticias.pe/exitosa/img/global/favicon.png" />
+      </head>
       <body className={inter.className}>
         <StationProvider>
           {children}

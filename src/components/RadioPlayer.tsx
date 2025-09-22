@@ -39,7 +39,7 @@ const getPeruTime = () => {
 function RadioPlayer() {
   // Obtener el ID de la estación del contexto
   const { initialStationId } = useStation();
-  
+
   const [stations, setStations] = useState<Station[]>([]);
   const [currentStation, setCurrentStation] = useState(0);
   const [visibleStations, setVisibleStations] = useState<Station[]>([]);
@@ -52,13 +52,14 @@ function RadioPlayer() {
   const [showSchedule, setShowSchedule] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [stationsLoaded, setStationsLoaded] = useState(false);
+  const [audioSourceUpdated, setAudioSourceUpdated] = useState(false);
 
   // Detectar si es dispositivo móvil
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768);
     };
-    
+
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
@@ -68,7 +69,7 @@ function RadioPlayer() {
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentTime(getPeruTime());
-    }, 1000); // Actualizar cada segundo
+    }, 1000);
 
     return () => clearInterval(timer);
   }, []);
@@ -76,14 +77,12 @@ function RadioPlayer() {
   // Actualizar estaciones visibles cuando cambia la estación actual (solo para móvil)
   useEffect(() => {
     if (stations.length === 0) return;
-    
-    // Mostrar solo 3 estaciones a la vez en móvil
+
     if (isMobile) {
       const stationsCount = stations.length;
       const prevIndex = (currentStation - 1 + stationsCount) % stationsCount;
       const nextIndex = (currentStation + 1) % stationsCount;
-      
-      // Siempre mostrar 3 estaciones: anterior, actual y siguiente
+
       setVisibleStations([
         stations[prevIndex],
         stations[currentStation],
@@ -92,6 +91,26 @@ function RadioPlayer() {
     }
   }, [currentStation, stations, isMobile]);
 
+  // IMPORTANTE: Actualizar la fuente de audio cuando cambia currentStation
+  useEffect(() => {
+    if (!audioRef.current || !stations[currentStation] || !stationsLoaded) return;
+
+    console.log('📻 Actualizando fuente de audio para:', stations[currentStation].name, stations[currentStation].url);
+
+    // Pausar el audio actual si está reproduciéndose
+    if (isPlaying) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+    }
+
+    // Actualizar la fuente de audio
+    audioRef.current.src = stations[currentStation].url;
+    audioRef.current.load(); // Importante: recargar el elemento de audio
+
+    setAudioSourceUpdated(true);
+
+  }, [currentStation, stations, stationsLoaded]);
+
   // Calcular progreso del programa
   const calculateProgress = () => {
     if (!currentProgram) return 0;
@@ -99,16 +118,13 @@ function RadioPlayer() {
     const now = currentTime;
     const [startHour, startMin] = currentProgram.start_time.split(':').map(Number);
     const [endHour, endMin] = currentProgram.end_time.split(':').map(Number);
-    
-    // Convertir todo a minutos desde medianoche
+
     const currentMinutes = now.getHours() * 60 + now.getMinutes();
     const startMinutes = startHour * 60 + startMin;
     let endMinutes = endHour * 60 + endMin;
-    
-    // Si el programa cruza medianoche
+
     if (endMinutes <= startMinutes) {
-      endMinutes += 24 * 60; // Agregar 24 horas en minutos
-      // Si estamos después de medianoche, ajustar el tiempo actual
+      endMinutes += 24 * 60;
       if (currentMinutes < startMinutes) {
         const adjustedMinutes = currentMinutes + 24 * 60;
         const duration = endMinutes - startMinutes;
@@ -116,31 +132,29 @@ function RadioPlayer() {
         return Math.min(100, Math.max(0, (elapsed / duration) * 100));
       }
     }
-    
-    // Calcular progreso normal
+
     const duration = endMinutes - startMinutes;
     const elapsed = currentMinutes - startMinutes;
-    
+
     return Math.min(100, Math.max(0, (elapsed / duration) * 100));
   };
 
-  // Configurar MediaSession API para control de medios cuando la pantalla está bloqueada
+  // Configurar MediaSession API
   useEffect(() => {
-    if ('mediaSession' in navigator && currentProgram) {
+    if ('mediaSession' in navigator && currentProgram && stations[currentStation]) {
       navigator.mediaSession.metadata = new MediaMetadata({
         title: currentProgram.name,
         artist: currentProgram.host,
-        album: `Exitosa ${stations[currentStation]?.name || 'Radio'}`,
+        album: `Exitosa ${stations[currentStation].name}`,
         artwork: [
-          { 
-            src: currentProgram.image || stations[currentStation]?.image || '', 
-            sizes: '512x512', 
-            type: 'image/jpeg' 
+          {
+            src: currentProgram.image || stations[currentStation].image || '',
+            sizes: '512x512',
+            type: 'image/jpeg'
           }
         ]
       });
-      
-      // Actualizar controles de MediaSession
+
       navigator.mediaSession.setActionHandler('play', togglePlay);
       navigator.mediaSession.setActionHandler('pause', togglePlay);
       navigator.mediaSession.setActionHandler('previoustrack', prevStation);
@@ -153,6 +167,7 @@ function RadioPlayer() {
     apiClient.getStations()
       .then(data => {
         if (data.success) {
+          console.log('✅ Estaciones cargadas:', data.data.map((s: Station) => s.name));
           setStations(data.data);
           setStationsLoaded(true);
         }
@@ -165,16 +180,18 @@ function RadioPlayer() {
   // Efecto para manejar la selección de estación cuando initialStationId cambia o las estaciones se cargan
   useEffect(() => {
     if (!stationsLoaded || stations.length === 0) {
-      return; // No hacer nada si las estaciones aún no se han cargado
+      return;
     }
-    
+
+    console.log('🎯 Buscando estación inicial:', initialStationId);
+
     if (initialStationId) {
-      // Buscar el índice de la estación por ID
       const stationIndex = stations.findIndex(s => s.id === initialStationId);
-      
+
       if (stationIndex !== -1) {
+        console.log('✅ Estación encontrada:', stations[stationIndex].name, 'en índice:', stationIndex);
         setCurrentStation(stationIndex);
-        
+
         // Cargar el programa actual para esta estación
         setIsLoadingProgram(true);
         apiClient.getCurrentProgram(stations[stationIndex].id)
@@ -189,37 +206,21 @@ function RadioPlayer() {
           .finally(() => {
             setIsLoadingProgram(false);
           });
-        
-        return; // Salir del efecto ya que hemos encontrado y establecido la estación
+
+        return;
+      } else {
+        console.log('⚠️ Estación no encontrada con ID:', initialStationId);
       }
     }
-    
+
     // Si no hay initialStationId o no se encontró, usar Lima como predeterminado
     const limaIndex = stations.findIndex(s => s.id === 'lima');
     if (limaIndex !== -1) {
+      console.log('📍 Usando Lima por defecto');
       setCurrentStation(limaIndex);
-      
-      // Cargar el programa actual para Lima
+
       setIsLoadingProgram(true);
       apiClient.getCurrentProgram(stations[limaIndex].id)
-        .then(data => {
-          if (data.success) {
-            setCurrentProgram(data.data);
-          }
-        })
-        .catch(error => {
-          console.error('Error loading program:', error);
-        })
-        .finally(() => {
-          setIsLoadingProgram(false);
-        });
-    } else if (stations.length > 0) {
-      // Si no hay Lima, usar la primera estación
-      setCurrentStation(0);
-      
-      // Cargar el programa actual para la primera estación
-      setIsLoadingProgram(true);
-      apiClient.getCurrentProgram(stations[0].id)
         .then(data => {
           if (data.success) {
             setCurrentProgram(data.data);
@@ -255,35 +256,46 @@ function RadioPlayer() {
     };
 
     loadProgram();
-    const interval = setInterval(loadProgram, 60000); // Actualizar cada minuto
+    const interval = setInterval(loadProgram, 60000);
     return () => clearInterval(interval);
   }, [currentStation, stations]);
 
   // Control de reproducción
   const togglePlay = () => {
-    if (!audioRef.current) return;
+    if (!audioRef.current || !stations[currentStation]) return;
+
+    console.log('🎵 Toggle play. Estado actual:', isPlaying);
+    console.log('🎵 URL actual del audio:', audioRef.current.src);
+    console.log('🎵 Estación actual:', stations[currentStation].name);
 
     if (isPlaying) {
       audioRef.current.pause();
       setIsPlaying(false);
-      
-      // Actualizar estado de MediaSession
+
       if ('mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'paused';
       }
     } else {
+      // Verificar que la URL sea correcta antes de reproducir
+      if (audioRef.current.src !== stations[currentStation].url) {
+        console.log('⚠️ Actualizando URL del audio antes de reproducir');
+        audioRef.current.src = stations[currentStation].url;
+        audioRef.current.load();
+      }
+
       setIsBuffering(true);
       audioRef.current.play()
         .then(() => {
+          console.log('✅ Reproduciendo:', stations[currentStation].name);
           setIsPlaying(true);
           setIsBuffering(false);
-          
-          // Actualizar estado de MediaSession
+
           if ('mediaSession' in navigator) {
             navigator.mediaSession.playbackState = 'playing';
           }
         })
-        .catch(() => {
+        .catch((error) => {
+          console.error('❌ Error al reproducir:', error);
           setIsBuffering(false);
         });
     }
@@ -292,31 +304,45 @@ function RadioPlayer() {
   // Cambiar estación 
   const changeStation = (index: number) => {
     if (!audioRef.current || !stations[index] || index === currentStation) return;
-    
+
+    console.log('🔄 Cambiando a estación:', stations[index].name);
+
     const wasPlaying = isPlaying;
-    audioRef.current.pause();
+
+    // Pausar audio actual
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
     setIsPlaying(false);
+
+    // Cambiar estación
     setCurrentStation(index);
-    
-    // Actualizar la URL sin recargar la página para reflejar la estación seleccionada
+
+    // Actualizar la URL sin recargar la página
     if (typeof window !== 'undefined' && window.history) {
       const newUrl = `/${stations[index].id}`;
       window.history.replaceState(null, '', newUrl);
     }
-    
-    audioRef.current.src = stations[index].url;
-    audioRef.current.load();
 
+    // La actualización del audio src se maneja en el useEffect de currentStation
+
+    // Si estaba reproduciendo, intentar reproducir la nueva estación después de un delay
     if (wasPlaying) {
-      setIsBuffering(true);
-      audioRef.current.play()
-        .then(() => {
-          setIsPlaying(true);
-          setIsBuffering(false);
-        })
-        .catch(() => {
-          setIsBuffering(false);
-        });
+      setTimeout(() => {
+        if (audioRef.current) {
+          setIsBuffering(true);
+          audioRef.current.play()
+            .then(() => {
+              console.log('✅ Reproduciendo nueva estación:', stations[index].name);
+              setIsPlaying(true);
+              setIsBuffering(false);
+            })
+            .catch((error) => {
+              console.error('❌ Error al reproducir nueva estación:', error);
+              setIsBuffering(false);
+            });
+        }
+      }, 500); // Pequeño delay para asegurar que el audio se haya actualizado
     }
   };
 
@@ -353,28 +379,22 @@ function RadioPlayer() {
       {/* Main Content */}
       <div className="main-content">
         <div className="content-wrapper">
-          {/* Stations Bar - 3 estaciones en móvil, todas en desktop */}
+          {/* Stations Bar */}
           <div className="stations-bar">
             <button className="arrow-button" onClick={prevStation}>
               <ChevronLeft size={24} />
             </button>
-            
+
             {isMobile ? (
-              // Vista móvil: solo 3 estaciones
               <div className="stations-display">
                 {visibleStations.map((s, i) => (
                   <button
                     key={`visible-${s.id}-${i}`}
                     onClick={() => {
-                      // Si es la estación central, no hacemos nada
                       if (i === 1) return;
-                      
-                      // Si es la anterior, vamos a la anterior
                       if (i === 0) {
                         prevStation();
-                      }
-                      // Si es la siguiente, vamos a la siguiente
-                      else if (i === 2) {
+                      } else if (i === 2) {
                         nextStation();
                       }
                     }}
@@ -384,8 +404,8 @@ function RadioPlayer() {
                     {s.image ? (
                       <img src={s.image} alt={s.name} />
                     ) : (
-                      <span style={{ 
-                        fontSize: '12px', 
+                      <span style={{
+                        fontSize: '12px',
                         fontWeight: '600',
                         color: i === 1 ? '#D70007' : '#666'
                       }}>
@@ -396,7 +416,6 @@ function RadioPlayer() {
                 ))}
               </div>
             ) : (
-              // Vista desktop: todas las estaciones (sin botón de programación)
               <div className="stations-display-desktop">
                 {stations.map((s, i) => (
                   <button
@@ -408,8 +427,8 @@ function RadioPlayer() {
                     {s.image ? (
                       <img src={s.image} alt={s.name} />
                     ) : (
-                      <span style={{ 
-                        fontSize: '12px', 
+                      <span style={{
+                        fontSize: '12px',
                         fontWeight: '600',
                         color: i === currentStation ? '#D70007' : '#666'
                       }}>
@@ -420,7 +439,7 @@ function RadioPlayer() {
                 ))}
               </div>
             )}
-            
+
             <button className="arrow-button" onClick={nextStation}>
               <ChevronRight size={24} />
             </button>
@@ -428,15 +447,14 @@ function RadioPlayer() {
 
           {/* Content Area */}
           <div className="content-area">
-            {/* Actualizado: Mostrar el nombre del programa y botón de programación */}
             <div className="program-info">
-              <h1 className="program-title">{currentProgram ? currentProgram.name : `Exitosa ${station.name}`}</h1>
-              <button 
+              <h1 className="program-title">{currentProgram ? currentProgram.name : `Exitosa ${station?.name || ''}`}</h1>
+              <button
                 className="program-schedule-button"
                 onClick={loadStationSchedule}
               >
                 <span className="program-schedule-icon">≡</span>
-                PROGRAMACIÓN {station.name.toUpperCase()}
+                PROGRAMACIÓN {station?.name.toUpperCase() || ''}
               </button>
             </div>
 
@@ -448,9 +466,9 @@ function RadioPlayer() {
                 </div>
               ) : currentProgram?.image ? (
                 <>
-                  <OptimizedImage 
-                    src={currentProgram.image} 
-                    alt={currentProgram ? currentProgram.name : `Exitosa ${station.name}`}
+                  <OptimizedImage
+                    src={currentProgram.image}
+                    alt={currentProgram ? currentProgram.name : `Exitosa ${station?.name || ''}`}
                     width={600}
                     quality={90}
                     className="w-full h-full object-cover"
@@ -460,8 +478,7 @@ function RadioPlayer() {
                       </div>
                     }
                   />
-                  
-                  {/* Información del programa superpuesta en la imagen (estilo actualizado) */}
+
                   {currentProgram && (
                     <div className="program-info-overlay">
                       <div className="on-air-container">
@@ -484,10 +501,9 @@ function RadioPlayer() {
               ) : (
                 <>
                   <Radio className="radio-icon" size={80} />
-                  <div className="station-name-cover">{station.name}</div>
+                  <div className="station-name-cover">{station?.name || ''}</div>
                   <div className="radio-text">Radio Exitosa</div>
-                  
-                  {/* Información del programa superpuesta (estilo actualizado) */}
+
                   {currentProgram && (
                     <div className="program-info-overlay">
                       <div className="on-air-container">
@@ -508,7 +524,7 @@ function RadioPlayer() {
                   )}
                 </>
               )}
-              
+
               {!isPlaying && !isBuffering && (
                 <div className="play-button-overlay" onClick={togglePlay}>
                   <div className="play-button-circle">
@@ -516,7 +532,7 @@ function RadioPlayer() {
                   </div>
                 </div>
               )}
-              
+
               {isBuffering && (
                 <div className="buffering-overlay">
                   <Loader className="buffering-spinner" size={48} />
@@ -525,15 +541,15 @@ function RadioPlayer() {
             </div>
           </div>
 
-          {/* Controls Bar - Diseño diferente para móvil */}
+          {/* Controls Bar */}
           {isMobile ? (
             <div className="controls-bar mobile-controls">
               <div className="mobile-player-row">
                 <div className="now-playing-info">
                   <div className="now-playing-cover">
                     {currentProgram?.image ? (
-                      <OptimizedImage 
-                        src={currentProgram.image} 
+                      <OptimizedImage
+                        src={currentProgram.image}
                         alt={currentProgram.name}
                         width={40}
                         quality={80}
@@ -546,11 +562,11 @@ function RadioPlayer() {
                     )}
                   </div>
                   <div className="now-playing-text">
-                    <p className="now-playing-title">{currentProgram ? currentProgram.name : `Exitosa ${station.name}`}</p>
-                    <p className="now-playing-subtitle">{station.name}</p>
+                    <p className="now-playing-title">{currentProgram ? currentProgram.name : `Exitosa ${station?.name || ''}`}</p>
+                    <p className="now-playing-subtitle">{station?.name || ''}</p>
                   </div>
                 </div>
-                
+
                 <div className="player-controls-mobile">
                   <button className="control-button" onClick={prevStation}>
                     <SkipBack size={18} />
@@ -564,7 +580,6 @@ function RadioPlayer() {
                 </div>
               </div>
 
-              {/* Mobile progress bar - más simple */}
               <div className="progress-section-mobile">
                 <span className="time-display">
                   {currentProgram?.start_time || '00:00'}
@@ -578,14 +593,13 @@ function RadioPlayer() {
               </div>
             </div>
           ) : (
-            // Diseño original para desktop
             <div className="controls-bar">
               <div className="controls-container">
                 <div className="now-playing-info">
                   <div className="now-playing-cover">
                     {currentProgram?.image ? (
-                      <OptimizedImage 
-                        src={currentProgram.image} 
+                      <OptimizedImage
+                        src={currentProgram.image}
                         alt={currentProgram.name}
                         width={48}
                         quality={80}
@@ -598,11 +612,11 @@ function RadioPlayer() {
                     )}
                   </div>
                   <div className="now-playing-text">
-                    <p className="now-playing-title">{currentProgram ? currentProgram.name : `Exitosa ${station.name}`}</p>
-                    <p className="now-playing-subtitle">{station.name}</p>
+                    <p className="now-playing-title">{currentProgram ? currentProgram.name : `Exitosa ${station?.name || ''}`}</p>
+                    <p className="now-playing-subtitle">{station?.name || ''}</p>
                   </div>
                 </div>
-                
+
                 <div className="player-controls">
                   <button className="control-button" onClick={prevStation}>
                     <SkipBack size={20} />
@@ -614,7 +628,7 @@ function RadioPlayer() {
                     <SkipForward size={20} />
                   </button>
                 </div>
-                
+
                 <div className="progress-section">
                   <span className="time-display">
                     {currentProgram?.start_time || '00:00'}
@@ -632,9 +646,8 @@ function RadioPlayer() {
         </div>
       </div>
 
-      {/* Usar el componente de programación separado */}
-      {showSchedule && (
-        <ProgramSchedule 
+      {showSchedule && station && (
+        <ProgramSchedule
           stationId={station.id}
           stationName={station.name}
           onClose={() => setShowSchedule(false)}
@@ -643,14 +656,13 @@ function RadioPlayer() {
       )}
 
       {/* Audio element */}
-      <audio 
-        ref={audioRef} 
+      <audio
+        ref={audioRef}
         crossOrigin="anonymous"
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
-      >
-        {station && <source src={station.url} type="audio/mpeg" />}
-      </audio>
+        preload="none"
+      />
     </div>
   );
 }
