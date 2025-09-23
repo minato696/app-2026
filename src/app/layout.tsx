@@ -13,7 +13,24 @@ export const viewport: Viewport = {
   maximumScale: 1,
 };
 
+// Función para obtener la URL base
+function getBaseUrl() {
+  if (process.env.NEXT_PUBLIC_DOMAIN) {
+    const domains = process.env.NEXT_PUBLIC_DOMAIN.split(',');
+    const mainDomain = domains[0].trim();
+    // Si es localhost o IP, usar http, si no usar https
+    const protocol = mainDomain.includes('localhost') || mainDomain.match(/\d+\.\d+\.\d+\.\d+/)
+      ? 'http'
+      : 'https';
+    return `${protocol}://${mainDomain}`;
+  }
+  return 'http://localhost:9544';
+}
+
 export const metadata: Metadata = {
+  // AGREGAR metadataBase para evitar el warning
+  metadataBase: new URL(getBaseUrl()),
+
   title: {
     template: '%s | La Voz que Integra al Perú',
     default: 'Radio Exitosa - La Voz que Integra al Perú',
@@ -56,7 +73,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     locale: 'es_PE',
-    url: 'https://radioexitosa.pe/',
+    url: getBaseUrl(),
     siteName: 'Radio Exitosa',
     title: 'Radio Exitosa - La Voz que Integra al Perú',
     description: 'Escucha Radio Exitosa en vivo - La Voz que Integra al Perú - Noticias, información y debate en todo el Perú',

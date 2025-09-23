@@ -5,6 +5,7 @@ import { Play, Pause, ChevronLeft, ChevronRight, Radio, Loader, SkipBack, SkipFo
 import OptimizedImage from '@/components/OptimizedImage';
 import { apiClient } from '@/lib/apiClient';
 import { useStation } from '@/contexts/StationContext';
+import { useCurrentProgram } from '@/hooks/useCurrentProgram';
 import ProgramSchedule from '@/components/ProgramSchedule';
 import '../styles/RadioPlayer.css';
 
@@ -45,14 +46,19 @@ function RadioPlayer() {
   const [visibleStations, setVisibleStations] = useState<Station[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
-  const [currentProgram, setCurrentProgram] = useState<Program | null>(null);
   const [currentTime, setCurrentTime] = useState(getPeruTime());
-  const [isLoadingProgram, setIsLoadingProgram] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [stationsLoaded, setStationsLoaded] = useState(false);
   const [audioSourceUpdated, setAudioSourceUpdated] = useState(false);
+
+  // Usar el nuevo hook para el programa actual
+  const {
+    currentProgram,
+    isLoading: isLoadingProgram,
+    refresh: refreshProgram
+  } = useCurrentProgram(stations[currentStation]?.id);
 
   // Detectar si es dispositivo móvil
   useEffect(() => {
@@ -191,22 +197,6 @@ function RadioPlayer() {
       if (stationIndex !== -1) {
         console.log('✅ Estación encontrada:', stations[stationIndex].name, 'en índice:', stationIndex);
         setCurrentStation(stationIndex);
-
-        // Cargar el programa actual para esta estación
-        setIsLoadingProgram(true);
-        apiClient.getCurrentProgram(stations[stationIndex].id)
-          .then(data => {
-            if (data.success) {
-              setCurrentProgram(data.data);
-            }
-          })
-          .catch(error => {
-            console.error('Error loading program:', error);
-          })
-          .finally(() => {
-            setIsLoadingProgram(false);
-          });
-
         return;
       } else {
         console.log('⚠️ Estación no encontrada con ID:', initialStationId);
@@ -218,47 +208,8 @@ function RadioPlayer() {
     if (limaIndex !== -1) {
       console.log('📍 Usando Lima por defecto');
       setCurrentStation(limaIndex);
-
-      setIsLoadingProgram(true);
-      apiClient.getCurrentProgram(stations[limaIndex].id)
-        .then(data => {
-          if (data.success) {
-            setCurrentProgram(data.data);
-          }
-        })
-        .catch(error => {
-          console.error('Error loading program:', error);
-        })
-        .finally(() => {
-          setIsLoadingProgram(false);
-        });
     }
   }, [initialStationId, stations, stationsLoaded]);
-
-  // Cargar programa actual cuando cambia la estación
-  useEffect(() => {
-    if (!stations[currentStation]) return;
-
-    const loadProgram = () => {
-      setIsLoadingProgram(true);
-      apiClient.getCurrentProgram(stations[currentStation].id)
-        .then(data => {
-          if (data.success) {
-            setCurrentProgram(data.data);
-          }
-        })
-        .catch(error => {
-          console.error('Error loading program:', error);
-        })
-        .finally(() => {
-          setIsLoadingProgram(false);
-        });
-    };
-
-    loadProgram();
-    const interval = setInterval(loadProgram, 60000);
-    return () => clearInterval(interval);
-  }, [currentStation, stations]);
 
   // Control de reproducción
   const togglePlay = () => {
@@ -325,6 +276,7 @@ function RadioPlayer() {
     }
 
     // La actualización del audio src se maneja en el useEffect de currentStation
+    // El hook useCurrentProgram se actualizará automáticamente al cambiar el stationId
 
     // Si estaba reproduciendo, intentar reproducir la nueva estación después de un delay
     if (wasPlaying) {
